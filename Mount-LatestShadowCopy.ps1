@@ -19,7 +19,7 @@
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$ComputerName,   # Имя или IP-адрес удаленного сервера (например, "192.168.88.3" или "FS01.domain.local")
+    [string]$RemoteComputer, # Имя или IP-адрес удаленного сервера (например, "192.168.88.3" или "FS01.domain.local")
 
     [Parameter(Mandatory=$true)]
     [ValidatePattern('^[A-Za-z]:$')]
@@ -52,10 +52,10 @@ if (-not $MountFolder) { $MountFolder = "Latest_$volumeLetter" }
 if (-not $ShareName)   { $ShareName   = "Disk_${volumeLetter}_$" }
 $MountPath = Join-Path $MountRoot $MountFolder      # Полный путь к символьной ссылке, например "C:\ShadowMounts\Latest_D"
 
-Write-Host "Подключение к $ComputerName, том $Volume ..." -ForegroundColor Cyan
+Write-Host "Подключение к $RemoteComputer, том $Volume ..." -ForegroundColor Cyan
 
 # ============================== Удалённое выполнение на целевом сервере ==============================
-Invoke-Command -ComputerName $ComputerName -ArgumentList $VolumePath, $MountPath, $ShareName, $ShareAccess, $Force -ScriptBlock {
+Invoke-Command -ComputerName $RemoteComputer -ArgumentList $VolumePath, $MountPath, $ShareName, $ShareAccess, $Force -ScriptBlock {
 
     param($VolumePath, $MountPath, $ShareName, $ShareAccess, $Force)
 
@@ -81,7 +81,7 @@ Invoke-Command -ComputerName $ComputerName -ArgumentList $VolumePath, $MountPath
     # Извлекаем путь к устройству теневой копии (например "\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy123")
     $deviceObject = $latestShadow.Shadow.DeviceObject + "\"    # Добавляем слеш, т.к. это каталог
     Write-Host "Найдена копия от $($latestShadow.InstallDate)" -ForegroundColor Green
-    Write-Host "Устройство теневой копии: $deviceObject"
+    Write-Host "Устройство теневой копии: $deviceObject" -ForegroundColor Gray
 
     # ----- Шаг 2: Подготовка точки монтирования и создание символьной ссылки --------------------------------
     Write-Host "[Шаг 2] Подготовка точки монтирования $MountPath..." -ForegroundColor Yellow
@@ -106,7 +106,7 @@ Invoke-Command -ComputerName $ComputerName -ArgumentList $VolumePath, $MountPath
     $parentDir = Split-Path $MountPath -Parent
     if (-not (Test-Path $parentDir)) {
         New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
-        Write-Host "Создана родительская папка: $parentDir"
+        Write-Host "Создана родительская папка: $parentDir" -ForegroundColor Gray
     }
 
     # Создание символьной ссылки на каталог через cmd /c mklink /d
@@ -129,7 +129,7 @@ Invoke-Command -ComputerName $ComputerName -ArgumentList $VolumePath, $MountPath
     if ($existingShare) {
         # Удаляем старую шару, чтобы гарантированно перенаправить её на новую точку монтирования
         Remove-SmbShare -Name $ShareName -Force
-        Write-Host "Удалена существующая шара '$ShareName' (путь: $($existingShare.Path))"
+        Write-Host "Удалена существующая шара '$ShareName' (путь: $($existingShare.Path))" -ForegroundColor Gray
     }
 
     # Создаём новую SMB-шару с указанным именем, путём к символьной ссылке и правами доступа

@@ -19,7 +19,7 @@
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$ComputerName,   # Имя или IP-адрес удаленного сервера (например, "192.168.88.3" или "FS01.domain.local")
+    [string]$RemoteComputer, # Имя или IP-адрес удаленного сервера (например, "192.168.88.3" или "FS01.domain.local")
 
     [Parameter(Mandatory=$true)]
     [ValidatePattern('^[A-Za-z]:$')]
@@ -50,38 +50,48 @@ $volumeLetter = $Volume.TrimEnd(':')                # Буква диска бе
 # Автоматическое формирование имён, если они не заданы явно
 if (-not $MountFolder) { $MountFolder = "Latest_$volumeLetter" }
 if (-not $ShareName)   { $ShareName   = "Disk_${volumeLetter}_$" }
-$MountPath = Join-Path $MountRoot $MountFolder      # Полный путь к символьной ссылке, например "C:\ShadowMounts\Latest_D"
 
-Write-Host "Подключение к $ComputerName, том $Volume ..." -ForegroundColor Cyan
+# Собираем путь вручную, т.к. Join-Path может проверять наличие диска локально (актуально, если MountRoot на Z: и т.п.)
+$MountPath = $MountRoot.TrimEnd('\') + "\" + $MountFolder.TrimStart('\')
+
+Write-Host "Подключение к $RemoteComputer, том $Volume ..." -ForegroundColor Cyan
 
 # ============================== Удалённое выполнение на целевом сервере ==============================
-Invoke-Command -ComputerName $ComputerName -ArgumentList $VolumePath, $MountPath, $ShareName, $ShareAccess, $Force -ScriptBlock {
+Invoke-Command -ComputerName $RemoteComputer -ArgumentList $VolumePath, $MountPath, $ShareName, $ShareAccess, $Force, $volumeLetter -ScriptBlock {
 
-    param($VolumePath, $MountPath, $ShareName, $ShareAccess, $Force)
+    param($VolumePath, $MountPath, $ShareName, $ShareAccess, $Force, $volumeLetter)
 
     # ----- Шаг 1: Поиск последней теневой копии для заданного тома ---------------------------------------
     Write-Host "[Шаг 1] Поиск последней теневой копии для тома $VolumePath..." -ForegroundColor Yellow
 
-    # Получаем все теневые копии на сервере и фильтруем строго по имени тома (VolumeName содержит "D:\")
-    $allShadows = Get-CimInstance -ClassName Win32_ShadowCopy | Where-Object { $_.VolumeName -eq $VolumePath }
+    # 1.1 Получаем DeviceID тома по букве диска (VolumeName в ShadowCopy соответствует DeviceID в Win32_Volume)
+    $targetVolume = Get-CimInstance -ClassName Win32_Volume -ErrorAction Stop |
+                    Where-Object { $_.DriveLetter -eq "$($volumeLetter):" } |
+                    Select-Object -First 1
+
+    if (-not $targetVolume) {
+        throw "Том $($volumeLetter): не найден на сервере $env:COMPUTERNAME"
+    }
+
+    $targetDeviceId = $targetVolume.DeviceID
+    Write-Host "ID тома: $targetDeviceId" -ForegroundColor Gray
+
+    # 1.2 Получаем все теневые копии на сервере и фильтруем по найденному DeviceID
+    $allShadows = Get-CimInstance -ClassName Win32_ShadowCopy -ErrorAction Stop |
+                  Where-Object { $_.VolumeName -eq $targetDeviceId }
 
     # Если подходящие копии не найдены — аварийно завершаем
     if (-not $allShadows) {
-        throw "Теневые копии для тома $VolumePath не найдены на $env:COMPUTERNAME"
+        throw "Теневые копии для тома $($volumeLetter): не найдены на $env:COMPUTERNAME"
     }
 
-    # Преобразуем дату установки каждой копии из строкового CIM-формата в DateTime и сортируем по убыванию
-    $latestShadow = $allShadows | ForEach-Object {
-        [PSCustomObject]@{
-            Shadow      = $_
-            InstallDate = [Management.ManagementDateTimeConverter]::ToDateTime($_.InstallDate)
-        }
-    } | Sort-Object InstallDate -Descending | Select-Object -First 1
+    # Сортируем по дате установки (Get-CimInstance уже возвращает InstallDate как DateTime)
+    $latestShadow = $allShadows | Sort-Object InstallDate -Descending | Select-Object -First 1
 
     # Извлекаем путь к устройству теневой копии (например "\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy123")
-    $deviceObject = $latestShadow.Shadow.DeviceObject + "\"    # Добавляем слеш, т.к. это каталог
+    $deviceObject = $latestShadow.DeviceObject + "\"    # Добавляем слеш, т.к. это каталог
     Write-Host "Найдена копия от $($latestShadow.InstallDate)" -ForegroundColor Green
-    Write-Host "Устройство теневой копии: $deviceObject"
+    Write-Host "Устройство теневой копии: $deviceObject" -ForegroundColor Gray
 
     # ----- Шаг 2: Подготовка точки монтирования и создание символьной ссылки --------------------------------
     Write-Host "[Шаг 2] Подготовка точки монтирования $MountPath..." -ForegroundColor Yellow
@@ -106,18 +116,19 @@ Invoke-Command -ComputerName $ComputerName -ArgumentList $VolumePath, $MountPath
     $parentDir = Split-Path $MountPath -Parent
     if (-not (Test-Path $parentDir)) {
         New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
-        Write-Host "Создана родительская папка: $parentDir"
+        Write-Host "Создана родительская папка: $parentDir" -ForegroundColor Gray
     }
 
     # Создание символьной ссылки на каталог через cmd /c mklink /d
-    # Используем Invoke-Expression, чтобы корректно передать кавычки и спецсимволы
-    $cmd = "cmd.exe /c mklink /d `"$MountPath`" `"$deviceObject`""
-    Write-Verbose "Выполняется: $cmd" -Verbose:$false   # раскомментируйте для отладки
-    Invoke-Expression $cmd
+    # Убираем завершающий слеш у устройства, т.к. mklink может выдать ошибку
+    $deviceObjectTrimmed = $deviceObject.TrimEnd('\')
+
+    Write-Host "Создание символьной ссылки: $MountPath -> $deviceObjectTrimmed" -ForegroundColor Gray
+    cmd.exe /c mklink /d `"$MountPath`" `"$deviceObjectTrimmed`"
 
     # Проверяем код возврата команды mklink (0 = успех)
     if ($LASTEXITCODE -ne 0) {
-        throw "Ошибка создания символьной ссылки (код $LASTEXITCODE). Проверьте права и доступность теневой копии."
+        throw "Ошибка создания символьной ссылки (код $LASTEXITCODE). Устройство: $deviceObjectTrimmed. Проверьте права и доступность теневой копии."
     }
     Write-Host "Символьная ссылка создана: $MountPath -> $deviceObject" -ForegroundColor Green
 
@@ -129,7 +140,7 @@ Invoke-Command -ComputerName $ComputerName -ArgumentList $VolumePath, $MountPath
     if ($existingShare) {
         # Удаляем старую шару, чтобы гарантированно перенаправить её на новую точку монтирования
         Remove-SmbShare -Name $ShareName -Force
-        Write-Host "Удалена существующая шара '$ShareName' (путь: $($existingShare.Path))"
+        Write-Host "Удалена существующая шара '$ShareName' (путь: $($existingShare.Path))" -ForegroundColor Gray
     }
 
     # Создаём новую SMB-шару с указанным именем, путём к символьной ссылке и правами доступа

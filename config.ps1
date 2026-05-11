@@ -4,22 +4,22 @@
 $RemoteComputer = "192.168.88.3"          # или "FS01.domain.local"
 
 # Буква тома, для которого создаётся теневая копия
-$Volume = "D:"
+$Volume = "F:"
 
 # Корневая папка на удалённом сервере для временных точек монтирования VSS
-$MountRoot = "C:\ShadowMounts"
+$MountRoot = "Z:\ShadowMounts"
 
 # Имя подпапки, в которую будет смонтирована теневая копия
-$MountFolder = "Latest_D"
+$MountFolder = "Latest_F"
 
 # Имя временной SMB-шары (скрытая шара, оканчивающаяся на $)
-$ShareName = "Disk_D_$"
+$ShareName = "Disk_F_$"
 
 # Кому предоставить полный доступ к шаре (по умолчанию Everyone)
 $ShareAccess = "Everyone"
 
 # Локальный путь назначения для резервной копии (куда копируем данные)
-$DestinationLocal = "D:\BackUp\Public"
+$DestinationLocal = "D:\BackUp\Отдел продаж"
 
 # Путь к лог-файлу резервного копирования
-$LogPath = "D:\Log\backup_Public.log"
+$LogPath = "D:\Log\backup_Отдел продаж.log"

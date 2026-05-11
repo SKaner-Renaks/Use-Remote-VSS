@@ -41,15 +41,28 @@ Write-Host "VSS-шара: $BaseShare"
 Write-Host "Локальное назначение: $DestinationLocal"
 Write-Host "Время начала: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Cyan
 
-# Очищаем лог-файл перед началом новой сессии
-if (Test-Path -Path $LogPath) {
-    Remove-Item -Path $LogPath -Force -ErrorAction SilentlyContinue
-}
+# [Шаг 2] Проверка доступности базовой шары и подготовка логов
+Write-Host "[Шаг 2] Проверка доступности инфраструктуры..." -ForegroundColor Yellow
 
-# [Шаг 2] Проверка доступности базовой шары
 if (-not (Test-Path -LiteralPath $BaseShare)) {
     Write-Host "Ошибка: Сетевая шара '$BaseShare' недоступна." -ForegroundColor Red
     exit 8
+}
+
+# Проверяем и создаем папку для лога, если она отсутствует
+$LogDir = Split-Path -Path $LogPath -Parent
+if ($LogDir -and -not (Test-Path -Path $LogDir)) {
+    try {
+        New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction Stop | Out-Null
+        Write-Host "Создана папка для логов: $LogDir" -ForegroundColor Gray
+    } catch {
+        Write-Warning "Не удалось создать папку для логов: $($_.Exception.Message)"
+    }
+}
+
+# Очищаем лог-файл перед началом новой сессии
+if (Test-Path -Path $LogPath) {
+    Remove-Item -Path $LogPath -Force -ErrorAction SilentlyContinue
 }
 
 # [Шаг 3] Итерационное копирование путей

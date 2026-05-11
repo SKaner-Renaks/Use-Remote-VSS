@@ -57,31 +57,39 @@ $MountPath = $MountRoot.TrimEnd('\') + "\" + $MountFolder.TrimStart('\')
 Write-Host "Подключение к $RemoteComputer, том $Volume ..." -ForegroundColor Cyan
 
 # ============================== Удалённое выполнение на целевом сервере ==============================
-Invoke-Command -ComputerName $RemoteComputer -ArgumentList $VolumePath, $MountPath, $ShareName, $ShareAccess, $Force -ScriptBlock {
+Invoke-Command -ComputerName $RemoteComputer -ArgumentList $VolumePath, $MountPath, $ShareName, $ShareAccess, $Force, $volumeLetter -ScriptBlock {
 
-    param($VolumePath, $MountPath, $ShareName, $ShareAccess, $Force)
+    param($VolumePath, $MountPath, $ShareName, $ShareAccess, $Force, $volumeLetter)
 
     # ----- Шаг 1: Поиск последней теневой копии для заданного тома ---------------------------------------
     Write-Host "[Шаг 1] Поиск последней теневой копии для тома $VolumePath..." -ForegroundColor Yellow
 
-    # Получаем все теневые копии на сервере и фильтруем строго по имени тома (VolumeName содержит "D:\")
-    $allShadows = Get-CimInstance -ClassName Win32_ShadowCopy | Where-Object { $_.VolumeName -eq $VolumePath }
+    # 1.1 Получаем DeviceID тома по букве диска (VolumeName в ShadowCopy соответствует DeviceID в Win32_Volume)
+    $targetVolume = Get-CimInstance -ClassName Win32_Volume -ErrorAction Stop |
+                    Where-Object { $_.DriveLetter -eq "$($volumeLetter):" } |
+                    Select-Object -First 1
+
+    if (-not $targetVolume) {
+        throw "Том $($volumeLetter): не найден на сервере $env:COMPUTERNAME"
+    }
+
+    $targetDeviceId = $targetVolume.DeviceID
+    Write-Host "ID тома: $targetDeviceId" -ForegroundColor Gray
+
+    # 1.2 Получаем все теневые копии на сервере и фильтруем по найденному DeviceID
+    $allShadows = Get-CimInstance -ClassName Win32_ShadowCopy -ErrorAction Stop |
+                  Where-Object { $_.VolumeName -eq $targetDeviceId }
 
     # Если подходящие копии не найдены — аварийно завершаем
     if (-not $allShadows) {
-        throw "Теневые копии для тома $VolumePath не найдены на $env:COMPUTERNAME"
+        throw "Теневые копии для тома $($volumeLetter): не найдены на $env:COMPUTERNAME"
     }
 
-    # Преобразуем дату установки каждой копии из строкового CIM-формата в DateTime и сортируем по убыванию
-    $latestShadow = $allShadows | ForEach-Object {
-        [PSCustomObject]@{
-            Shadow      = $_
-            InstallDate = [Management.ManagementDateTimeConverter]::ToDateTime($_.InstallDate)
-        }
-    } | Sort-Object InstallDate -Descending | Select-Object -First 1
+    # Сортируем по дате установки (Get-CimInstance уже возвращает InstallDate как DateTime)
+    $latestShadow = $allShadows | Sort-Object InstallDate -Descending | Select-Object -First 1
 
     # Извлекаем путь к устройству теневой копии (например "\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy123")
-    $deviceObject = $latestShadow.Shadow.DeviceObject + "\"    # Добавляем слеш, т.к. это каталог
+    $deviceObject = $latestShadow.DeviceObject + "\"    # Добавляем слеш, т.к. это каталог
     Write-Host "Найдена копия от $($latestShadow.InstallDate)" -ForegroundColor Green
     Write-Host "Устройство теневой копии: $deviceObject" -ForegroundColor Gray
 

@@ -120,14 +120,15 @@ Invoke-Command -ComputerName $RemoteComputer -ArgumentList $VolumePath, $MountPa
     }
 
     # Создание символьной ссылки на каталог через cmd /c mklink /d
-    # Используем Invoke-Expression, чтобы корректно передать кавычки и спецсимволы
-    $cmd = "cmd.exe /c mklink /d `"$MountPath`" `"$deviceObject`""
-    Write-Verbose "Выполняется: $cmd" -Verbose:$false   # раскомментируйте для отладки
-    Invoke-Expression $cmd
+    # Убираем завершающий слеш у устройства, т.к. mklink может выдать ошибку
+    $deviceObjectTrimmed = $deviceObject.TrimEnd('\')
+
+    Write-Host "Создание символьной ссылки: $MountPath -> $deviceObjectTrimmed" -ForegroundColor Gray
+    cmd.exe /c mklink /d `"$MountPath`" `"$deviceObjectTrimmed`"
 
     # Проверяем код возврата команды mklink (0 = успех)
     if ($LASTEXITCODE -ne 0) {
-        throw "Ошибка создания символьной ссылки (код $LASTEXITCODE). Проверьте права и доступность теневой копии."
+        throw "Ошибка создания символьной ссылки (код $LASTEXITCODE). Устройство: $deviceObjectTrimmed. Проверьте права и доступность теневой копии."
     }
     Write-Host "Символьная ссылка создана: $MountPath -> $deviceObject" -ForegroundColor Green
 

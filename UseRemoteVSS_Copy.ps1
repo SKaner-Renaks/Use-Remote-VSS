@@ -61,7 +61,9 @@ try {
     $Success = $true
 }
 catch {
-    Write-Host "`n[КРИТИЧЕСКАЯ ОШИБКА]: $($_.Exception.Message)" -ForegroundColor Red
+    # Извлекаем более подробную ошибку, если она доступна
+    $DetailedError = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+    Write-Host "`n[КРИТИЧЕСКАЯ ОШИБКА]: $DetailedError" -ForegroundColor Red
 }
 finally {
     # [Шаг 3] Очистка (выполняется всегда)

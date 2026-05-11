@@ -25,7 +25,7 @@ param(
     [ValidatePattern('^[A-Za-z]:$')]
     [string]$Volume,          # Буква тома с двоеточием: "D:", "F:" и т.п.
 
-    [string]$MountRoot = "Z:\ShadowMounts",   # Корневая папка на сервере для точек монтирования (по умолчанию C:\ShadowMounts).
+    [string]$MountRoot = "C:\ShadowMounts",   # Корневая папка на сервере для точек монтирования (по умолчанию C:\ShadowMounts).
                                               # Пример: -MountRoot "C:\VSS"
 
     [string]$MountFolder,     # Имя подпапки, куда будет смонтирована теневая копия.
@@ -51,15 +51,15 @@ $volumeLetter = $Volume.TrimEnd(':')                # Буква диска бе
 if (-not $MountFolder) { $MountFolder = "Latest_$volumeLetter" }
 if (-not $ShareName)   { $ShareName   = "Disk_${volumeLetter}_$" }
 
+# Собираем путь вручную, т.к. Join-Path может проверять наличие диска локально (актуально, если MountRoot на Z: и т.п.)
+$MountPath = $MountRoot.TrimEnd('\') + "\" + $MountFolder.TrimStart('\')
+
 Write-Host "Подключение к $RemoteComputer, том $Volume ..." -ForegroundColor Cyan
 
 # ============================== Удалённое выполнение на целевом сервере ==============================
-Invoke-Command -ComputerName $RemoteComputer -ArgumentList $VolumePath, $MountRoot, $MountFolder, $ShareName, $ShareAccess, $Force -ScriptBlock {
+Invoke-Command -ComputerName $RemoteComputer -ArgumentList $VolumePath, $MountPath, $ShareName, $ShareAccess, $Force -ScriptBlock {
 
-    param($VolumePath, $MountRoot, $MountFolder, $ShareName, $ShareAccess, $Force)
-
-    # Собираем полный путь монтирования уже на удалённой машине
-    $MountPath = Join-Path $MountRoot $MountFolder
+    param($VolumePath, $MountPath, $ShareName, $ShareAccess, $Force)
 
     # ----- Шаг 1: Поиск последней теневой копии для заданного тома ---------------------------------------
     Write-Host "[Шаг 1] Поиск последней теневой копии для тома $VolumePath..." -ForegroundColor Yellow

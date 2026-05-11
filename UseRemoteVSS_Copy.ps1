@@ -18,12 +18,16 @@ if (Test-Path $ConfigPath) {
     exit 1
 }
 
-Write-Host "Загружен конфиг: RemoteComputer=$RemoteComputer, Volume=$Volume, MountRoot=$MountRoot, MountFolder=$MountFolder"
-
 $GlobalTimer = [System.Diagnostics.Stopwatch]::StartNew()
 $Success = $false
 
 Write-Host "=== Запуск процесса VSS-копирования: $(Get-Date) ===" -ForegroundColor Magenta
+
+# Валидация исходных путей
+if ($null -eq $VssSourcePaths -or $VssSourcePaths.Count -eq 0) {
+    Write-Host "[ОШИБКА] Не указаны исходные пути для копирования (`$VssSourcePaths в config.ps1)." -ForegroundColor Red
+    exit 1
+}
 
 try {
     # [Шаг 1] Монтирование теневой копии
@@ -46,6 +50,7 @@ try {
     & "$PSScriptRoot\RemoteCopy.ps1" `
         -RemoteComputer $RemoteComputer `
         -ShareName $ShareName `
+        -VssSourcePaths $VssSourcePaths `
         -DestinationLocal $DestinationLocal `
         -LogPath $LogPath
 

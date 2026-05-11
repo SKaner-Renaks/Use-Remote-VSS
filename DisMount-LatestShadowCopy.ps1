@@ -23,7 +23,8 @@ param(
     [string]$MountFolder
 )
 
-$MountPath = Join-Path $MountRoot $MountFolder
+# Собираем путь вручную, т.к. Join-Path может проверять наличие диска локально (актуально, если MountRoot на Z: и т.п.)
+$MountPath = $MountRoot.TrimEnd('\') + "\" + $MountFolder.TrimStart('\')
 
 Write-Host "Запуск очистки на $RemoteComputer..." -ForegroundColor Cyan
 

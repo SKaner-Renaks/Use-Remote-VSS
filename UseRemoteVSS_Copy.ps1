@@ -18,6 +18,8 @@ if (Test-Path $ConfigPath) {
     exit 1
 }
 
+Write-Host "Загружен конфиг: RemoteComputer=$RemoteComputer, Volume=$Volume, MountRoot=$MountRoot, MountFolder=$MountFolder"
+
 $GlobalTimer = [System.Diagnostics.Stopwatch]::StartNew()
 $Success = $false
 
